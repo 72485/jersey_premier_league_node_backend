@@ -20,10 +20,32 @@ const transporter = nodemailer.createTransport({
         user: process.env.SMTP_USERNAME,
         pass: process.env.SMTP_PASSWORD,
     },
+    pool: {
+        maxConnections: 1,
+        maxMessages: 10,
+        rateDelta: 1000,
+        rateLimit: 5,
+    },
+    connectionTimeout: 10000, // 10 seconds
+    socketTimeout: 10000,     // 10 seconds
+});
+
+// DEBUG: Log email configuration on startup
+console.log('[EMAIL CONFIG DEBUG]', {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: parseInt(process.env.SMTP_PORT, 10) === 465,
+    username: process.env.SMTP_USERNAME ? '***' : 'MISSING',
+    password: process.env.SMTP_PASSWORD ? '***' : 'MISSING',
+    sender: process.env.SENDER_EMAIL,
+    verificationUrl: VERIFICATION_BASE_URL,
 });
 
 const sendVerificationEmail = async (recipientEmail, token) => {
+    console.log(`[EMAIL DEBUG] Starting email verification for: ${recipientEmail}`);
+    
     const verificationLink = `${VERIFICATION_BASE_URL}?token=${token}`;
+    console.log(`[EMAIL DEBUG] Verification link: ${verificationLink}`);
 
     const mailOptions = {
         from: process.env.SENDER_EMAIL,
@@ -37,10 +59,31 @@ const sendVerificationEmail = async (recipientEmail, token) => {
     };
 
     try {
-        await transporter.sendMail(mailOptions);
-        console.log(`Verification email sent to ${recipientEmail}`);
+        console.log(`[EMAIL DEBUG] Attempting to send email from ${mailOptions.from} to ${recipientEmail}`);
+        console.log('[EMAIL DEBUG] SMTP Config:', {
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: parseInt(process.env.SMTP_PORT, 10) === 465,
+            user: process.env.SMTP_USERNAME,
+        });
+        
+        // Add timeout to catch hanging
+        const sendPromise = transporter.sendMail(mailOptions);
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Email send timeout after 10 seconds')), 10000)
+        );
+        
+        const result = await Promise.race([sendPromise, timeoutPromise]);
+        console.log(`[EMAIL SUCCESS] Email sent to ${recipientEmail}:`, result.messageId);
     } catch (error) {
-        console.error(`Error sending verification email to ${recipientEmail}:`, error);
+        console.error(`[EMAIL ERROR] Failed to send email to ${recipientEmail}:`);
+        console.error('[EMAIL ERROR] Error details:', {
+            message: error.message,
+            code: error.code,
+            response: error.response,
+            command: error.command,
+            stack: error.stack,
+        });
         // Do not crash the server on email failure, but log it.
     }
 };
@@ -106,6 +149,7 @@ const registerHandler = async (req, res) => {
     }
 
     try {
+        console.log(`[REGISTER DEBUG] Registering user: ${email}`);
         const passwordHash = await bcrypt.hash(password, 10);
         const verificationToken = generateRandomString(40);
 
@@ -117,8 +161,13 @@ const registerHandler = async (req, res) => {
         const newUser = new User(result.rows[0]);
         const token = generateToken(newUser);
 
-        // Send email (non-blocking)
-        sendVerificationEmail(newUser.email, verificationToken);
+        // Send email (non-blocking with error handling)
+        console.log(`[REGISTER DEBUG] Calling sendVerificationEmail for ${newUser.email}`);
+        try {
+            await sendVerificationEmail(newUser.email, verificationToken);
+        } catch (emailError) {
+            console.error('[REGISTER DEBUG] Email sending error caught in handler:', emailError);
+        }
 
         const userWithToken = newUser.toJson();
         userWithToken.token = token;
