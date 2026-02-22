@@ -3,7 +3,7 @@ services:
     name: jersey-premier-league-api
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install --force
     startCommand: npm start
     envVars:
       - key: NODE_ENV
