@@ -18,8 +18,6 @@ services:
         sync: false
       - key: SMTP_PORT
         sync: false
-      - key: SMTP_SSL
-        sync: false
       - key: SMTP_USERNAME
         sync: false
       - key: SMTP_PASSWORD

@@ -15,7 +15,7 @@ const VERIFICATION_BASE_URL = process.env.VERIFICATION_BASE_URL;
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT, 10),
-    secure: process.env.SMTP_SSL === 'true', // true for 465, false for other ports
+    secure: parseInt(process.env.SMTP_PORT, 10) === 465, // true for 465, false for 587 (TLS)
     auth: {
         user: process.env.SMTP_USERNAME,
         pass: process.env.SMTP_PASSWORD,
