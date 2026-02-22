@@ -139,9 +139,13 @@ const registerHandler = async (req, res) => {
         const newUser = new User(result.rows[0]);
         const token = generateToken(newUser);
 
-        // Send email (non-blocking)
+        // Send email (non-blocking with error handling)
         console.log(`[REGISTER DEBUG] Calling sendVerificationEmail for ${newUser.email}`);
-        sendVerificationEmail(newUser.email, verificationToken);
+        try {
+            await sendVerificationEmail(newUser.email, verificationToken);
+        } catch (emailError) {
+            console.error('[REGISTER DEBUG] Email sending error caught in handler:', emailError);
+        }
 
         const userWithToken = newUser.toJson();
         userWithToken.token = token;
