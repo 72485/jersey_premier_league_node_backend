@@ -15,11 +15,19 @@ const VERIFICATION_BASE_URL = process.env.VERIFICATION_BASE_URL;
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT, 10),
-    secure: parseInt(process.env.SMTP_PORT, 10) === 465, // true for 465, false for 587 (TLS)
+    secure: parseInt(process.env.SMTP_PORT, 10) === 465, // true for 465 (SSL), false for 587 (TLS)
     auth: {
         user: process.env.SMTP_USERNAME,
         pass: process.env.SMTP_PASSWORD,
     },
+    pool: {
+        maxConnections: 1,
+        maxMessages: 10,
+        rateDelta: 1000,
+        rateLimit: 5,
+    },
+    connectionTimeout: 10000, // 10 seconds
+    socketTimeout: 10000,     // 10 seconds
 });
 
 // DEBUG: Log email configuration on startup
@@ -52,7 +60,20 @@ const sendVerificationEmail = async (recipientEmail, token) => {
 
     try {
         console.log(`[EMAIL DEBUG] Attempting to send email from ${mailOptions.from} to ${recipientEmail}`);
-        const result = await transporter.sendMail(mailOptions);
+        console.log('[EMAIL DEBUG] SMTP Config:', {
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: parseInt(process.env.SMTP_PORT, 10) === 465,
+            user: process.env.SMTP_USERNAME,
+        });
+        
+        // Add timeout to catch hanging
+        const sendPromise = transporter.sendMail(mailOptions);
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Email send timeout after 10 seconds')), 10000)
+        );
+        
+        const result = await Promise.race([sendPromise, timeoutPromise]);
         console.log(`[EMAIL SUCCESS] Email sent to ${recipientEmail}:`, result.messageId);
     } catch (error) {
         console.error(`[EMAIL ERROR] Failed to send email to ${recipientEmail}:`);
@@ -61,6 +82,7 @@ const sendVerificationEmail = async (recipientEmail, token) => {
             code: error.code,
             response: error.response,
             command: error.command,
+            stack: error.stack,
         });
         // Do not crash the server on email failure, but log it.
     }
