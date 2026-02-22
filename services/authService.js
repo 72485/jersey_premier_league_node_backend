@@ -22,8 +22,22 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+// DEBUG: Log email configuration on startup
+console.log('[EMAIL CONFIG DEBUG]', {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: parseInt(process.env.SMTP_PORT, 10) === 465,
+    username: process.env.SMTP_USERNAME ? '***' : 'MISSING',
+    password: process.env.SMTP_PASSWORD ? '***' : 'MISSING',
+    sender: process.env.SENDER_EMAIL,
+    verificationUrl: VERIFICATION_BASE_URL,
+});
+
 const sendVerificationEmail = async (recipientEmail, token) => {
+    console.log(`[EMAIL DEBUG] Starting email verification for: ${recipientEmail}`);
+    
     const verificationLink = `${VERIFICATION_BASE_URL}?token=${token}`;
+    console.log(`[EMAIL DEBUG] Verification link: ${verificationLink}`);
 
     const mailOptions = {
         from: process.env.SENDER_EMAIL,
@@ -37,10 +51,17 @@ const sendVerificationEmail = async (recipientEmail, token) => {
     };
 
     try {
-        await transporter.sendMail(mailOptions);
-        console.log(`Verification email sent to ${recipientEmail}`);
+        console.log(`[EMAIL DEBUG] Attempting to send email from ${mailOptions.from} to ${recipientEmail}`);
+        const result = await transporter.sendMail(mailOptions);
+        console.log(`[EMAIL SUCCESS] Email sent to ${recipientEmail}:`, result.messageId);
     } catch (error) {
-        console.error(`Error sending verification email to ${recipientEmail}:`, error);
+        console.error(`[EMAIL ERROR] Failed to send email to ${recipientEmail}:`);
+        console.error('[EMAIL ERROR] Error details:', {
+            message: error.message,
+            code: error.code,
+            response: error.response,
+            command: error.command,
+        });
         // Do not crash the server on email failure, but log it.
     }
 };
@@ -106,6 +127,7 @@ const registerHandler = async (req, res) => {
     }
 
     try {
+        console.log(`[REGISTER DEBUG] Registering user: ${email}`);
         const passwordHash = await bcrypt.hash(password, 10);
         const verificationToken = generateRandomString(40);
 
@@ -118,6 +140,7 @@ const registerHandler = async (req, res) => {
         const token = generateToken(newUser);
 
         // Send email (non-blocking)
+        console.log(`[REGISTER DEBUG] Calling sendVerificationEmail for ${newUser.email}`);
         sendVerificationEmail(newUser.email, verificationToken);
 
         const userWithToken = newUser.toJson();
